@@ -1,16 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tarm/serial"
 	"github.com/virtcanhead/sensorhead/bt901"
 	"io"
+	"net"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,20 +20,30 @@ var (
 	optDevice    string
 	optBaud      int
 	optCalibrate bool
+	optBind      string
 
-	waitGroup = &sync.WaitGroup{}
-
-	isShuttingDown bool
+	angles     Angles
+	anglesCond = sync.NewCond(&sync.Mutex{})
 )
+
+type Angles struct {
+	ID    uint64
+	Roll  float64
+	Pitch float64
+	Yaw   float64
+}
 
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 
-	flag.StringVar(&optDevice, "d", "/dev/tty.HC-06-DevB", "serial device file to open")
-	flag.IntVar(&optBaud, "b", 115200, "bound rate of serial device")
-	flag.BoolVar(&optCalibrate, "c", false, "start calibration")
+	flag.StringVar(&optDevice, "device", "/dev/tty.HC-06-DevB", "serial device file to open")
+	flag.IntVar(&optBaud, "baud", 115200, "bound rate of serial device")
+	flag.BoolVar(&optCalibrate, "calibrate", false, "start calibration")
+	flag.StringVar(&optBind, "bind", "127.0.0.1:6770", "bind address of NDJSON API service")
 	flag.Parse()
+
+	log.Info().Str("device", optDevice).Int("baud", optBaud).Bool("calibrate", optCalibrate).Str("bind", optBind).Msg("options loaded")
 
 	var err error
 	var p *serial.Port
@@ -46,15 +58,55 @@ func main() {
 		return
 	}
 
-	go signalRoutine()
-	waitGroup.Add(1)
-	go frameRoutine(p)
-	waitGroup.Wait()
+	var l net.Listener
+	if l, err = net.Listen("tcp", optBind); err != nil {
+		log.Error().Err(err).Msg("failed to bind")
+		return
+	}
+	defer l.Close()
+
+	go listenerRoutine(l)
+
+	frameReaderRoutine(p)
 }
 
-func frameRoutine(p io.Reader) {
+func listenerRoutine(l net.Listener) {
 	var err error
-	defer waitGroup.Done()
+	for {
+		var c net.Conn
+		if c, err = l.Accept(); err != nil {
+			log.Error().Err(err).Msg("failed to accept")
+			return
+		}
+		go connectionRoutine(c)
+	}
+}
+
+func connectionRoutine(c net.Conn) {
+	var err error
+	defer c.Close()
+	var localID uint64
+	for {
+		anglesCond.L.Lock()
+		for localID == angles.ID {
+			anglesCond.Wait()
+		}
+		var buf []byte
+		if buf, err = json.Marshal(&angles); err != nil {
+			log.Error().Err(err).Msg("failed to marshal angles")
+			break
+		}
+		if _, err = fmt.Fprintln(c, string(buf)); err != nil {
+			log.Error().Err(err).Msgf("failed to write connection")
+			break
+		}
+		localID = angles.ID
+		anglesCond.L.Unlock()
+	}
+}
+
+func frameReaderRoutine(p io.Reader) {
+	var err error
 	fr := bt901.NewFrameReader(p)
 	for {
 		var f bt901.Frame
@@ -63,23 +115,11 @@ func frameRoutine(p io.Reader) {
 			return
 		}
 		if f.Type == bt901.FrameTypeAngles {
-			var rol, pit, yaw float64
-			f.GetAngles(&rol, &pit, &yaw)
-			log.Info().Msgf("Roll, Pitch, Yaw = %04.4f, %04.4f, %04.4f", rol, pit, yaw)
-		}
-		if isShuttingDown {
-			log.Debug().Msg("read routine exiting")
-			break
+			f.GetAngles(&angles.Roll, &angles.Pitch, &angles.Yaw)
+			atomic.AddUint64(&angles.ID, 1)
+			anglesCond.Broadcast()
 		}
 	}
-}
-
-func signalRoutine() {
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
-	sig := <-done
-	log.Info().Str("signal", sig.String()).Msg("signal received")
-	isShuttingDown = true
 }
 
 func calibrate(p io.Writer) {
