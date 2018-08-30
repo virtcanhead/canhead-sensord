@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tarm/serial"
-	"github.com/virtcanhead/sensorhead/bt901"
+	"github.com/virtcanhead/canhead-sensord/jy901"
 	"io"
 	"net"
 	"os"
@@ -87,34 +87,45 @@ func connectionRoutine(c net.Conn) {
 	defer c.Close()
 	var localID uint64
 	for {
-		anglesCond.L.Lock()
-		for localID == angles.ID {
-			anglesCond.Wait()
-		}
-		var buf []byte
-		if buf, err = json.Marshal(&angles); err != nil {
-			log.Error().Err(err).Msg("failed to marshal angles")
+		if err = connectionLoop(c, &localID); err != nil {
 			break
 		}
-		if _, err = fmt.Fprintln(c, string(buf)); err != nil {
-			log.Error().Err(err).Msgf("failed to write connection")
-			break
-		}
-		localID = angles.ID
-		anglesCond.L.Unlock()
 	}
+}
+
+func connectionLoop(c net.Conn, localID *uint64) (err error) {
+	anglesCond.L.Lock()
+	defer anglesCond.L.Unlock()
+	// check duplicated fire
+	for *localID == angles.ID {
+		anglesCond.Wait()
+	}
+	// marshal angles
+	var buf []byte
+	if buf, err = json.Marshal(&angles); err != nil {
+		log.Error().Err(err).Msg("failed to marshal angles")
+		return
+	}
+	// write NDJSON
+	if _, err = fmt.Fprintln(c, string(buf)); err != nil {
+		log.Error().Err(err).Msgf("failed to write connection")
+		return
+	}
+	// update id
+	*localID = angles.ID
+	return
 }
 
 func frameReaderRoutine(p io.Reader) {
 	var err error
-	fr := bt901.NewFrameReader(p)
+	fr := jy901.NewFrameReader(p)
 	for {
-		var f bt901.Frame
+		var f jy901.Frame
 		if f, err = fr.NextFrame(); err != nil {
 			log.Error().Err(err).Msg("failed to read next frame")
 			return
 		}
-		if f.Type == bt901.FrameTypeAngles {
+		if f.Type == jy901.FrameTypeAngles {
 			f.GetAngles(&angles.Roll, &angles.Pitch, &angles.Yaw)
 			atomic.AddUint64(&angles.ID, 1)
 			anglesCond.Broadcast()
@@ -124,7 +135,7 @@ func frameReaderRoutine(p io.Reader) {
 
 func calibrate(p io.Writer) {
 	var err error
-	if _, err = p.Write(bt901.ResetCommand); err != nil {
+	if _, err = p.Write(jy901.ResetCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send reset command")
 		return
 	}
@@ -132,7 +143,7 @@ func calibrate(p io.Writer) {
 
 	time.Sleep(time.Second)
 
-	if _, err = p.Write(bt901.ReduceFramesCommand); err != nil {
+	if _, err = p.Write(jy901.ReduceFramesCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send reduce frames command")
 		return
 	}
@@ -142,13 +153,13 @@ func calibrate(p io.Writer) {
 
 	countdown("starting acceleration calibration", 5)
 
-	if _, err = p.Write(bt901.AccelerationCalibrationCommand); err != nil {
+	if _, err = p.Write(jy901.AccelerationCalibrationCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send acceleration calibration command")
 	}
 
 	countdown("acceleration calibration in progress", 5)
 
-	if _, err = p.Write(bt901.ExitCalibrationCommand); err != nil {
+	if _, err = p.Write(jy901.ExitCalibrationCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send exit calibration command")
 	}
 
@@ -156,13 +167,13 @@ func calibrate(p io.Writer) {
 
 	countdown("starting magnetic field calibration", 5)
 
-	if _, err = p.Write(bt901.MagneticFieldCalibrationCommand); err != nil {
+	if _, err = p.Write(jy901.MagneticFieldCalibrationCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send magnetic calibration command")
 	}
 
 	countdown("magnetic calibration in progress", 20)
 
-	if _, err = p.Write(bt901.ExitCalibrationCommand); err != nil {
+	if _, err = p.Write(jy901.ExitCalibrationCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send exit calibration command")
 	}
 
@@ -170,7 +181,7 @@ func calibrate(p io.Writer) {
 
 	time.Sleep(time.Second)
 
-	if _, err = p.Write(bt901.SpeedModeCommand); err != nil {
+	if _, err = p.Write(jy901.SpeedModeCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send speed mode command")
 		return
 	}
@@ -178,7 +189,7 @@ func calibrate(p io.Writer) {
 
 	time.Sleep(time.Second)
 
-	if _, err = p.Write(bt901.SaveCommand); err != nil {
+	if _, err = p.Write(jy901.SaveCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send save command")
 		return
 	}

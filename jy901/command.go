@@ -1,4 +1,4 @@
-package bt901
+package jy901
 
 var (
 	SaveCommand                     = NewCommand(0x00, 0x00, 0x00)

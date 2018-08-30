@@ -12,4 +12,4 @@
 *.out
 
 # output
-sensorhead
+/canhead-sensord
