@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	optDevice    string
-	optBaud      int
-	optCalibrate bool
-	optBind      string
+	optDevice string
+	optBaud   int
+	optSetup  bool
+	optBind   string
 
 	angles     Angles
 	anglesCond = sync.NewCond(&sync.Mutex{})
@@ -39,11 +39,11 @@ func main() {
 
 	flag.StringVar(&optDevice, "device", "/dev/tty.HC-06-DevB", "serial device file to open")
 	flag.IntVar(&optBaud, "baud", 115200, "bound rate of serial device")
-	flag.BoolVar(&optCalibrate, "calibrate", false, "start calibration")
+	flag.BoolVar(&optSetup, "setup", false, "setup the device")
 	flag.StringVar(&optBind, "bind", "127.0.0.1:6770", "bind address of NDJSON API service")
 	flag.Parse()
 
-	log.Info().Str("device", optDevice).Int("baud", optBaud).Bool("calibrate", optCalibrate).Str("bind", optBind).Msg("options loaded")
+	log.Info().Str("device", optDevice).Int("baud", optBaud).Bool("calibrate", optSetup).Str("bind", optBind).Msg("options loaded")
 
 	var err error
 	var p *serial.Port
@@ -53,7 +53,7 @@ func main() {
 	}
 	defer p.Close()
 
-	if optCalibrate {
+	if optSetup {
 		calibrate(p)
 		return
 	}
@@ -143,11 +143,11 @@ func calibrate(p io.Writer) {
 
 	time.Sleep(time.Second)
 
-	if _, err = p.Write(jy901.ReduceFramesCommand); err != nil {
+	if _, err = p.Write(jy901.SelectFramesCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send reduce frames command")
 		return
 	}
-	log.Info().Msg("frame reduced")
+	log.Info().Msg("frames selected")
 
 	time.Sleep(time.Second)
 
@@ -181,11 +181,11 @@ func calibrate(p io.Writer) {
 
 	time.Sleep(time.Second)
 
-	if _, err = p.Write(jy901.SpeedModeCommand); err != nil {
+	if _, err = p.Write(jy901.SelectSpeedCommand); err != nil {
 		log.Error().Err(err).Msg("failed to send speed mode command")
 		return
 	}
-	log.Info().Msg("more speed")
+	log.Info().Msg("speed selected")
 
 	time.Sleep(time.Second)
 

@@ -24,9 +24,9 @@ func (f Frame) IsValid() bool {
 }
 
 func (f Frame) GetAngles(rol, pit, yaw *float64) {
-	*rol = float64(extractUint16(f.Payload)) * 180 / 32768
-	*pit = float64(extractUint16(f.Payload[2:])) * 180 / 32768
-	*yaw = float64(extractUint16(f.Payload[4:])) * 180 / 32768
+	*rol = float64(extractUint16(f.Payload)) / 32768
+	*pit = float64(extractUint16(f.Payload[2:])) / 32768
+	*yaw = float64(extractUint16(f.Payload[4:])) / 32768
 }
 
 func extractUint16(buf []byte) int16 {
