@@ -1,4 +1,4 @@
-# canhead-sensord
+# mohead
 
 Bluetooth Motion Sensor Daemon for canhead
 
@@ -13,11 +13,11 @@ Bluetooth Motion Sensor Daemon for canhead
 ```bash
 go build
 
-./canhead-sensord --help
+./mohead --help
 ```
 
 ```text
-Usage of ./canhead-sensord:
+Usage of ./mohead:
   -baud int
         bound rate of serial device (default 115200)
   -bind string
@@ -37,13 +37,13 @@ By default, the device is `/dev/tty.HC-06-DevB`, if is not, you have to use the 
 **calibrate the device (if needed)**
 
 ```bash
-./canhead-sensord --calibrate
+./mohead --calibrate
 ```
 
-**run the canhead-sensord**
+**run the mohead**
 
 ```bash
-./canhead-sensord
+./mohead
 ```
 
 **read the values**

@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tarm/serial"
-	"github.com/virtcanhead/canhead-sensord/jy901"
+	"github.com/virtcanhead/mohead/jy901"
 	"io"
 	"net"
 	"os"
